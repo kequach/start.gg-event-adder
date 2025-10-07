@@ -11,8 +11,9 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "test-api": "node app.js --api-only",
     "test": "node app.js --test",
+    "test-api": "node app.js --api-only",
+    "manual": "node app.js --manual",
     "trigger": "node app.js --trigger",
     "clear": "node app.js --clear",
     "test-data": "node test-api.js",

@@ -2,111 +2,6 @@
 import 'dotenv/config';
 import { Client, GatewayIntentBits, Events } from 'discord.js';
 
-// Mock data structure to show what start.gg API typically returns for Germany
-const mockStartGGData = {
-  data: {
-    tournaments: {
-      nodes: [
-        {
-          id: 123456,
-          name: "Berlin Fighting Game Championship 2024",
-          slug: "tournament/berlin-fgc-2024",
-          countryCode: "DE",
-          startAt: 1691740800, // Unix timestamp
-          endAt: 1691913600,
-          numAttendees: 300,
-          venueAddress: "Messe Berlin, Messedamm 22",
-          venueName: "Messe Berlin",
-          city: "Berlin",
-          addrState: "Berlin",
-          postalCode: "14055",
-          lat: 52.5055,
-          lng: 13.2677,
-          timezone: "Europe/Berlin",
-          events: [
-            {
-              id: 654321,
-              name: "Street Fighter 6",
-              slug: "event/sf6",
-              numEntrants: 150,
-              videogame: {
-                id: 1386,
-                name: "Street Fighter 6",
-                displayName: "Street Fighter 6"
-              }
-            },
-            {
-              id: 654322,
-              name: "Tekken 8",
-              slug: "event/tekken8",
-              numEntrants: 120,
-              videogame: {
-                id: 1387,
-                name: "Tekken 8",
-                displayName: "Tekken 8"
-              }
-            }
-          ],
-          streams: [
-            {
-              streamName: "berlinfgc",
-              streamSource: "TWITCH"
-            }
-          ],
-          images: [
-            {
-              url: "https://images.start.gg/images/tournament/123456/image-abc123.png",
-              type: "primary"
-            }
-          ]
-        },
-        {
-          id: 123457,
-          name: "Munich Gaming Festival",
-          slug: "tournament/munich-gaming-2024",
-          countryCode: "DE",
-          startAt: 1688140800,
-          endAt: 1688313600,
-          numAttendees: 500,
-          venueAddress: "Olympiahalle München, Spiridon-Louis-Ring 21",
-          venueName: "Olympiahalle München",
-          city: "München",
-          addrState: "Bayern",
-          postalCode: "80809",
-          lat: 48.1753,
-          lng: 11.5494,
-          timezone: "Europe/Berlin",
-          events: [
-            {
-              id: 654323,
-              name: "Guilty Gear Strive",
-              slug: "event/ggst",
-              numEntrants: 200,
-              videogame: {
-                id: 1234,
-                name: "Guilty Gear Strive",
-                displayName: "Guilty Gear Strive"
-              }
-            }
-          ],
-          streams: [
-            {
-              streamName: "munichgaming",
-              streamSource: "TWITCH"
-            }
-          ],
-          images: [
-            {
-              url: "https://images.start.gg/images/tournament/123457/image-def456.png",
-              type: "primary"
-            }
-          ]
-        }
-      ]
-    }
-  }
-};
-
 // Function to simulate API response processing
 function processStartGGData(data) {
   console.log('📊 Processing Start.gg API Data Structure:');
@@ -186,10 +81,106 @@ function showDiscordEventPreview(events) {
   });
 }
 
-// Real API test function with authentication
-async function testRealStartGGAPI(countryCode = 'DE', videogameIds = null) {
-  console.log(`🔑 Testing Real Start.gg API for country: ${countryCode} (requires authentication)...\n`);
+// GraphQL query for fetching tournaments by country and videogame
+const TOURNAMENTS_QUERY = `
+  query TournamentsByCountry($cCode: String!, $perPage: Int!, $videogameIds: [ID!]) {
+    tournaments(query: {
+      perPage: $perPage
+      filter: {
+        countryCode: $cCode
+        videogameIds: $videogameIds
+      }
+    }) {
+      nodes {
+        id
+        name
+        slug
+        countryCode
+        startAt
+        endAt
+        numAttendees
+        venueAddress
+        venueName
+        city
+        addrState
+        postalCode
+        lat
+        lng
+        timezone
+        events {
+          id
+          name
+          slug
+          numEntrants
+          videogame {
+            id
+            name
+            displayName
+          }
+        }
+        streams {
+          streamName
+          streamSource
+        }
+        images {
+          url
+          type
+        }
+      }
+    }
+  }
+`;
+
+// Get configuration from environment variables or parameters (for testing)
+function getTournamentConfig(countryOverride = null, videogameIdsOverride = null) {
+  const countryCode = countryOverride || process.env.COUNTRY_CODE || 'DE';
   
+  let videogameIds;
+  if (videogameIdsOverride) {
+    videogameIds = Array.isArray(videogameIdsOverride) ? videogameIdsOverride : [videogameIdsOverride];
+  } else {
+    const videogameIdsString = process.env.VIDEOGAME_IDS || "1";
+    videogameIds = videogameIdsString.split(',').map(id => parseInt(id.trim()));
+  }
+  
+  return { countryCode, videogameIds };
+}
+
+// Make API request to start.gg
+async function makeStartGGRequest(query, variables) {
+  const response = await fetch('https://api.start.gg/gql/alpha', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.START_GG_TOKEN}`,
+    },
+    body: JSON.stringify({ query, variables })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.log('❌ Error response:', errorText);
+    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  
+  if (data.errors) {
+    console.log('❌ GraphQL Errors:', JSON.stringify(data.errors, null, 2));
+    throw new Error('GraphQL query returned errors');
+  }
+
+  return data;
+}
+
+// Production function to fetch tournament data using environment configuration
+async function fetchTournamentDataForProduction() {
+  return await fetchTournamentData();
+}
+
+// Main function to fetch tournament data from start.gg API (supports testing overrides)
+async function fetchTournamentData(countryOverride = null, videogameIdsOverride = null) {
+  // Check for required API token
   if (!process.env.START_GG_TOKEN) {
     console.log('⚠️ No START_GG_TOKEN found in .env file');
     console.log('💡 To test with real data, add your Start.gg API token to .env:');
@@ -197,105 +188,27 @@ async function testRealStartGGAPI(countryCode = 'DE', videogameIds = null) {
     return null;
   }
 
+  // Get configuration (from env vars or override parameters for testing)
+  const { countryCode, videogameIds } = getTournamentConfig(countryOverride, videogameIdsOverride);
+  
+  console.log(`🔑 Fetching tournament data for country: ${countryCode}...`);
+  console.log(`🎮 Filtering by videogame IDs: ${videogameIds.join(', ')}`);
+  console.log(`📊 Requesting up to 100 tournaments\n`);
+
   try {
-    // Official start.gg query for tournaments by country with videogame filtering
-    // Based on: https://developer.start.gg/docs/examples/queries/tournaments-by-location
-    const query = `
-      query TournamentsByCountry($cCode: String!, $perPage: Int!, $videogameIds: [ID!]) {
-        tournaments(query: {
-          perPage: $perPage
-          filter: {
-            countryCode: $cCode
-            videogameIds: $videogameIds
-          }
-        }) {
-          nodes {
-            id
-            name
-            slug
-            countryCode
-            startAt
-            endAt
-            numAttendees
-            venueAddress
-            venueName
-            city
-            addrState
-            postalCode
-            lat
-            lng
-            timezone
-            events {
-              id
-              name
-              slug
-              numEntrants
-              videogame {
-                id
-                name
-                displayName
-              }
-            }
-            streams {
-              streamName
-              streamSource
-            }
-            images {
-              url
-              type
-            }
-          }
-        }
-      }
-    `;
-
-    // Parse videogame IDs from environment variable, parameter, or use default
-    let gameIds;
-    if (videogameIds) {
-      gameIds = Array.isArray(videogameIds) ? videogameIds : [videogameIds];
-    } else {
-      const videogameIdsString = process.env.VIDEOGAME_IDS || "1";
-      gameIds = videogameIdsString.split(',').map(id => parseInt(id.trim()));
-    }
-
     const variables = {
       cCode: countryCode.toUpperCase(),
-      perPage: 100, // Increased from 10 to 100 tournaments
-      videogameIds: gameIds
+      perPage: 100,
+      videogameIds: videogameIds
     };
 
-    console.log(`📡 Querying tournaments for country code: ${variables.cCode}`);
-    console.log(`🎮 Filtering by videogame IDs: ${variables.videogameIds.join(', ')}`);
-    console.log(`📊 Requesting up to ${variables.perPage} tournaments\n`);
-
-    const response = await fetch('https://api.start.gg/gql/alpha', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.START_GG_TOKEN}`,
-      },
-      body: JSON.stringify({ query, variables })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.log('❌ Error response:', errorText);
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
+    const data = await makeStartGGRequest(TOURNAMENTS_QUERY, variables);
     
-    if (data.errors) {
-      console.log('❌ GraphQL Errors:', JSON.stringify(data.errors, null, 2));
-      throw new Error('GraphQL query returned errors');
-    }
-
-    console.log('✅ Real API Response:');
-    console.log(JSON.stringify(data, null, 2));
+    console.log('✅ Successfully fetched tournament data');
     return data;
 
   } catch (error) {
-    console.error('❌ Real API Error:', error.message);
+    console.error('❌ Error fetching tournament data:', error.message);
     return null;
   }
 }
@@ -489,7 +402,7 @@ async function runPeriodicTask() {
 
   console.log('📡 Fetching tournament data from start.gg API...');
   try {
-    const apiData = await testRealStartGGAPI();
+    const apiData = await fetchTournamentDataForProduction();
     
     if (apiData && apiData.data && apiData.data.tournaments) {
       const tournaments = apiData.data.tournaments.nodes;
@@ -548,7 +461,7 @@ client.once(Events.ClientReady, async readyClient => {
       videogameIds = gameArg.split('=')[1].split(',').map(id => parseInt(id.trim()));
     }
     
-    const realData = await testRealStartGGAPI(countryCode, videogameIds);
+    const realData = await fetchTournamentData(countryCode, videogameIds);
     if (realData) {
       const processedEvents = processStartGGData(realData);
       showDiscordEventPreview(processedEvents);
@@ -637,7 +550,7 @@ if (process.argv.includes('--api-only') || process.argv.includes('-a')) {
     videogameIds = gameArg.split('=')[1].split(',').map(id => parseInt(id.trim()));
   }
   
-  testRealStartGGAPI(countryCode, videogameIds).then((data) => {
+  fetchTournamentData(countryCode, videogameIds).then((data) => {
     if (data) {
       const processedEvents = processStartGGData(data);
       showDiscordEventPreview(processedEvents);
