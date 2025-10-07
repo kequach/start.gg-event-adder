@@ -1,6 +1,6 @@
 
 # start.gg Event Adder Discord Bot
-
+<img src="startgglogo.png" alt="Logo" width="200" height="200">
 This Discord bot automatically fetches real tournament data from the [start.gg](https://start.gg/) API and creates scheduled events in your Discord servers. It supports periodic updates, manual triggers, clearing all events, and test/API-only modes.
 
 ## Installing the Hosted Bot
